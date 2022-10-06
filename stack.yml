@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS service autoscaling based on Cloudwatch Alarm
+Parameters:
+  CWAlarmName:
+    Type: String
+    Description: Alarm Name to do scaling actions
+  ECSClusterName:
+    Type: String
+    Description: Alarm Name to do scaling actions
+  ECSServiceName:
+    Type: String
+    Description: Alarm Name to do scaling actions
+  MaxTasks:
+    Type: Number
+    Default: 5
+    Description: Maximum limit for Tasks
+  MinTasks:
+    Type: Number
+    Default: 1
+    Description: Minimum limit for Tasks
+  StepCount:
+    Type: Number
+    Default: 2
+    Description: Step count for scaling up.
+
+Resources:
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+        - arn:aws:iam::aws:policy/CloudWatchFullAccess
+  lambdaCode:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Scale ECS Tasks based on input.
+      Code:
+        ZipFile: !Sub |
+          #!/usr/bin/env python
+          """Lambda for ECS.
+
+          # this script tries to
+          # autoscale ECS containers.
+          """
+          import boto3
+
+          cwclient = boto3.client('cloudwatch', region_name="${AWS::Region}")
+          ecsclient = boto3.client('ecs', region_name="${AWS::Region}")
+
+          alarm_name = "${CWAlarmName}"
+          cluster_name = "${ECSClusterName}"
+          service_name = "${ECSServiceName}"
+          max_containers = ${MaxTasks}
+          min_containers = ${MinTasks}
+          step_count = ${StepCount}
+
+
+          def ecs_service_running_count(service_name):
+              """Get running containers count for a given service."""
+              response = ecsclient.describe_services(services=[service_name],
+                                                     cluster=cluster_name)
+              if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
+                  print("Something went wrong getting the task status \n" + response)
+                  return "ERROR_READING_TASK_STATUS"
+              return response['services'][0]['runningCount']
+
+
+          def ecs_task_scale(service_name, new_count):
+              """Scale up or down the existing services."""
+              # set the new desiredCount on service .
+              response = ecsclient.update_service(desiredCount=new_count,
+                                                  service=service_name, cluster=cluster_name,)
+              if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
+                  print("Set count " + str(new_count) + " in " + service_name)
+              else:
+                  print("Failed to update task count in " + service_name)
+                  print(response)
+
+
+          def main(event, context):
+              response = cwclient.describe_alarms(AlarmNames=[alarm_name])
+              if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
+                  print("Failed to get details of Alarm :" + alarm_name)
+                  print(response)
+                  exit()
+              if len(response['MetricAlarms']) < 1:
+                    print("Could not find that Alarm. Please check Alarm Name.")
+              current_count = ecs_service_running_count(service_name)
+              for i in response['MetricAlarms']:
+                  if i["StateValue"] != "OK":
+                      if current_count <= max_containers:
+                          new_count = current_count + step_count
+                          ecs_task_scale(service_name, new_count)
+                      else:
+                          print("Already at max scaling value of " + str(current_count))
+                  else:
+                      ecs_task_scale(service_name, min_containers)
+
+      Role: !GetAtt 'ExecutionRole.Arn'
+      Timeout: 120
+      Handler: index.main
+      Runtime: python3.8
+      MemorySize: 256
+  ScheduledRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: ScheduledRule for Lambda
+      ScheduleExpression: cron(*/5 * * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt 'lambdaCode.Arn'
+          Id: lambdaCode
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref 'lambdaCode'
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt 'ScheduledRule.Arn'
