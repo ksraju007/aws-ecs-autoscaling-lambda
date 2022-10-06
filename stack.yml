@@ -98,13 +98,17 @@ Resources:
               current_count = ecs_service_running_count(service_name)
               for i in response['MetricAlarms']:
                   if i["StateValue"] != "OK":
-                      if current_count <= max_containers:
+                      if current_count < max_containers:
                           new_count = current_count + step_count
                           ecs_task_scale(service_name, new_count)
                       else:
                           print("Already at max scaling value of " + str(current_count))
                   else:
-                      ecs_task_scale(service_name, min_containers)
+                      new_count = current_count - step_count
+                      if new_count < min_containers:
+                          ecs_task_scale(service_name, min_containers)
+                      else:
+                          ecs_task_scale(service_name, new_count)
 
       Role: !GetAtt 'ExecutionRole.Arn'
       Timeout: 120
