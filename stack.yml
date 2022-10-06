@@ -3,13 +3,13 @@ Description: ECS service autoscaling based on Cloudwatch Alarm
 Parameters:
   CWAlarmName:
     Type: String
-    Description: Alarm Name to do scaling actions
+    Description: Cloudwatch Alarm to watch for trigger
   ECSClusterName:
     Type: String
-    Description: Alarm Name to do scaling actions
+    Description: ECS Cluster Name.
   ECSServiceName:
     Type: String
-    Description: Alarm Name to do scaling actions
+    Description: Service Name to scale up or down
   MaxTasks:
     Type: Number
     Default: 5
