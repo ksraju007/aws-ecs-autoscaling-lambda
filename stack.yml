@@ -42,6 +42,7 @@ Resources:
         - arn:aws:iam::aws:policy/CloudWatchFullAccess
   lambdaCode:
     Type: AWS::Lambda::Function
+    DependsOn: LambdaLogGroup
     Properties:
       Description: Scale ECS Tasks based on input.
       Code:
@@ -115,6 +116,13 @@ Resources:
       Handler: index.main
       Runtime: python3.8
       MemorySize: 256
+      FunctionName: !Sub "${AWS::StackName}"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays: 3
   ScheduledRule:
     Type: AWS::Events::Rule
     Properties:
