@@ -106,10 +106,10 @@ Resources:
                           print("Already at max scaling value of " + str(current_count))
                   else:
                       new_count = current_count - step_count
-                      if new_count < min_containers:
-                          ecs_task_scale(service_name, min_containers)
-                      else:
+                      if new_count > min_containers:
                           ecs_task_scale(service_name, new_count)
+                      else:
+                          ecs_task_scale(service_name, min_containers)
 
       Role: !GetAtt 'ExecutionRole.Arn'
       Timeout: 120
